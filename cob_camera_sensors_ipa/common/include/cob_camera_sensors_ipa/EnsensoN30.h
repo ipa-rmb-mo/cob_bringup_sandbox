@@ -79,6 +79,10 @@ public:
 		cv::Mat* cartesianImage = 0, bool getLatestFrame = true, bool undistort = true,
 		ipa_CameraSensors::t_ToFGrayImageType grayImageType = ipa_CameraSensors::INTENSITY);
 
+	/// Returns the camera type.
+	/// @return The camera type
+	t_cameraType GetCameraType() { return m_CameraType; }
+
 	unsigned long SaveParameters(const char* filename);
 
 	bool isInitialized() {return m_initialized;}
@@ -87,6 +91,8 @@ public:
 private:
 	
 	NxLibItem m_Camera;					///< accessor element to the opened Ensenso camera
+
+	t_cameraType m_CameraType;			///< Camera Type
 
 	t_EnsensoN30VideoFormat m_VideoFormat; ///< Video format of color camera
 
