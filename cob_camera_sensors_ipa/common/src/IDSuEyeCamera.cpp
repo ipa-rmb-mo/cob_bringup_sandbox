@@ -170,13 +170,13 @@ unsigned long IDSuEyeCamera::Open()
 	std::cout << "\t ... This may take some seconds" << std::endl;
 
 	// get sensor info
-	PSENSORINFO sensorInfo;
-	is_GetSensorInfo(m_cameraDevice, sensorInfo);
-	m_width = sensorInfo->nMaxWidth;
-	m_height = sensorInfo->nMaxHeight;
+	SENSORINFO sensorInfo;
+	is_GetSensorInfo(m_cameraDevice, &sensorInfo);
+	m_width = sensorInfo.nMaxWidth;
+	m_height = sensorInfo.nMaxHeight;
 
 	// set data format of images
-	is_SetColorMode (m_cameraDevice, IS_CM_RGB8_PACKED);
+	is_SetColorMode(m_cameraDevice, IS_CM_BGR8_PACKED);
 
 	// memory initialization
 	INT success = is_AllocImageMem(m_cameraDevice, m_width, m_height, 24, &m_pcImageMemory, &m_pcImageMemoryId);

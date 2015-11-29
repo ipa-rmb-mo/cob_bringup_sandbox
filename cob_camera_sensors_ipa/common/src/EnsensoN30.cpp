@@ -205,8 +205,8 @@ unsigned long EnsensoN30::GetProperty(t_cameraProperty* cameraProperty)
 		{
 			// todo: adapt if necessary
 			// Depth image is upsampled according to the size of the color image
-			cameraProperty->cameraResolution.xResolution = m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmRightBottom][0].asInt() - m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmLeftTop][0].asInt();
-			cameraProperty->cameraResolution.yResolution = m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmRightBottom][1].asInt() - m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmLeftTop][1].asInt();
+			cameraProperty->cameraResolution.xResolution = m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmRightBottom][0].asInt() - m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmLeftTop][0].asInt() + 1;
+			cameraProperty->cameraResolution.yResolution = m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmRightBottom][1].asInt() - m_Camera[itmParameters][itmDisparityMap][itmAreaOfInterest][itmLeftTop][1].asInt() + 1;
 		}
 		else
 		{
