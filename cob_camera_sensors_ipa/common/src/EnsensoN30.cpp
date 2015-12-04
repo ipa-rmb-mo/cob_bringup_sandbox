@@ -73,6 +73,28 @@ unsigned long EnsensoN30::Init(std::string directory, int cameraIndex)
 		return ipa_Utils::RET_FAILED;
 	}
 
+	// import camera settings file if it exists
+	std::string settings_file = directory + "N30-settings.json";
+	std::ifstream file(settings_file.c_str(), std::ios::in);
+	if (file.is_open() == false)
+	{
+		std::cerr << "WARNING - EnsensoCamera::open:" << std::endl;
+		std::cerr << "\t ... Could not open settings file '" << settings_file << "'" << std::endl;
+	}
+	else
+	{
+		// read in file
+		std::stringstream json_settings;
+		std::string line;
+		while (file.eof() == false)
+		{
+			std::getline(file, line);
+			json_settings << line << std::endl;
+		}
+		m_JSONSettings = json_settings.str();
+		file.close();
+	}
+
 	try
 	{
 		std::cout << "Opening NxLib and waiting for cameras to be detected\n";
@@ -140,6 +162,13 @@ unsigned long EnsensoN30::Open()
 		NxLibCommand open(cmdOpen); // When calling the 'execute' method in this object, it will synchronously execute the command 'cmdOpen'
 		open.parameters()[itmCameras] = serial; // Set parameters for the open command
 		open.execute();
+
+		// set camera settings
+		if (m_JSONSettings.length() > 2)
+		{
+			std::cout << "Setting the following camera properties via json string:\n" << m_JSONSettings << "\n----------" << std::endl;
+			m_Camera[itmParameters].setJson(m_JSONSettings, true);
+		}
 	}
 	catch (NxLibException ex)
 	{

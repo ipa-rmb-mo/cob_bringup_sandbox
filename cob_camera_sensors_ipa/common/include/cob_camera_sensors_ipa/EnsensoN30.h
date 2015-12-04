@@ -102,6 +102,8 @@ private:
 	
 	std::string m_Serial;		///< serial number of the device
 
+	std::string m_JSONSettings;		///< JSON settings string for camera
+
 	unsigned long LoadParameters(const char* filename, int cameraIndex);
 };
 
