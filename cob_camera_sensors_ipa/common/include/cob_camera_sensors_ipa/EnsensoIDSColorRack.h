@@ -112,6 +112,8 @@ private:
 	int m_width;		///< image width
 	int m_height;		///< image height
 
+	std::string m_parameter_files_directory;	///< folder of parameter files
+
 	unsigned long LoadParameters(const char* filename, int cameraIndex);
 };
 

@@ -61,6 +61,8 @@ unsigned long EnsensoIDSColorRack::Init(std::string directory, int cameraIndex)
 		return ipa_Utils::RET_OK;
 	}
 
+	m_parameter_files_directory = directory;
+
 	// Load camera parameters from xml-file
 	if (LoadParameters((directory + "cameraSensorsIni.xml").c_str(), cameraIndex) & RET_FAILED)
 	{
@@ -145,6 +147,13 @@ unsigned long EnsensoIDSColorRack::Open()
 		NxLibCommand open(cmdOpen); // When calling the 'execute' method in this object, it will synchronously execute the command 'cmdOpen'
 		open.parameters()[itmCameras] = serial; // Set parameters for the open command
 		open.execute();
+
+		// load parameters from file
+		NxLibCommand loadUEyeParameterSet(cmdLoadUEyeParameterSet);
+		loadUEyeParameterSet.parameters()[itmCameras] = m_idsUEyeSerial;
+		std::string filename = m_parameter_files_directory + "ids_ueye_settings.ini";
+		loadUEyeParameterSet.parameters()[itmFilename] = filename;
+		loadUEyeParameterSet.execute();
 
 		m_width = m_idsUEyeCamera_nx[itmSensor][itmSize][0].asInt();
 		m_height = m_idsUEyeCamera_nx[itmSensor][itmSize][1].asInt();
