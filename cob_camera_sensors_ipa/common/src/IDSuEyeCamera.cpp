@@ -70,7 +70,8 @@ __DLL_LIBCAMERASENSORS__ AbstractColorCameraPtr ipa_CameraSensors::CreateColorCa
 }
 
 
-IDSuEyeCamera::IDSuEyeCamera()
+IDSuEyeCamera::IDSuEyeCamera(const std::string xmlTagName)
+	: m_xmlTagName(xmlTagName)
 {
 	m_initialized = false;
 	m_open = false;
@@ -352,7 +353,7 @@ unsigned long IDSuEyeCamera::LoadParameters(const char* filename, int cameraInde
 			// Tag element "IDSuEyeCamera of Xml Inifile		
 			TiXmlElement *p_xmlElement_Root_OCVC = NULL;
 			std::stringstream ss;
-			ss << "IDSuEyeCamera_" << cameraIndex;
+			ss << m_xmlTagName << cameraIndex;
 			p_xmlElement_Root_OCVC = p_xmlElement_Root->FirstChildElement( ss.str() );
 			if ( p_xmlElement_Root_OCVC )
 			{

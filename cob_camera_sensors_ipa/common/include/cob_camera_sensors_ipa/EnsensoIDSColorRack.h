@@ -31,13 +31,17 @@
 //}
 
 
-#ifndef __IPA_ENSENSO_N30_H__
-#define __IPA_ENSENSO_N30_H__
+#ifndef __IPA_ENSENSO_IDS_COLOR_RACK_H__
+#define __IPA_ENSENSO_IDS_COLOR_RACK_H__
 
 #ifdef __LINUX__
 	#include <cob_camera_sensors/AbstractRangeImagingSensor.h>
+	#include "cob_camera_sensors_ipa/EnsensoN30.h"
+	#include "cob_camera_sensors_ipa/IDSuEyeCamera.h"
 #else
 	#include <cob_driver/cob_camera_sensors/common/include/cob_camera_sensors/AbstractRangeImagingSensor.h>
+	#include "cob_bringup_sandbox/cob_camera_sensors_ipa/common/include/cob_camera_sensors_ipa/EnsensoN30.h"
+	#include "cob_bringup_sandbox/cob_camera_sensors_ipa/common/include/cob_camera_sensors_ipa/IDSuEyeCamera.h"
 #endif
 
 #include "nxLib.h"
@@ -46,18 +50,18 @@ namespace ipa_CameraSensors {
 
 /// @ingroup RangeCameraDriver
 /// Platform independent interface to EnsensoN30 camera.
-class __DLL_LIBCAMERASENSORS__ EnsensoN30 : public AbstractRangeImagingSensor
+class __DLL_LIBCAMERASENSORS__ EnsensoIDSColorRack : public AbstractRangeImagingSensor
 {
 public:
 
-	enum t_EnsensoN30VideoFormat
+	enum t_EnsensoIDSColorRackVideoFormat
 	{
 		SXGA = 0, // 1280×1024
 		VGA //640x480
 	};
 
-	EnsensoN30(const std::string xmlTagName = "EnsensoN30_");
-	~EnsensoN30();
+	EnsensoIDSColorRack();
+	~EnsensoIDSColorRack();
 
 	//*******************************************************************************
 	// AbstractRangeImagingSensor interface implementation
@@ -72,10 +76,10 @@ public:
 	unsigned long SetPropertyDefaults();
 	unsigned long GetProperty(t_cameraProperty* cameraProperty);
 
-	unsigned long AcquireImages(int widthStepRange, int widthStepGray, int widthStepCartesian, char* RangeImage=NULL, char* IntensityImage=NULL,
+	unsigned long AcquireImages(int widthStepRange, int widthStepColor, int widthStepCartesian, char* rangeImage=NULL, char* colorImage=NULL,
 		char* cartesianImage=NULL, bool getLatestFrame=true, bool undistort=true,
 		ipa_CameraSensors::t_ToFGrayImageType grayImageType = ipa_CameraSensors::INTENSITY);
-	unsigned long AcquireImages(cv::Mat* rangeImage = 0, cv::Mat* intensityImage = 0,
+	unsigned long AcquireImages(cv::Mat* rangeImage = 0, cv::Mat* colorImage = 0,
 		cv::Mat* cartesianImage = 0, bool getLatestFrame = true, bool undistort = true,
 		ipa_CameraSensors::t_ToFGrayImageType grayImageType = ipa_CameraSensors::INTENSITY);
 
@@ -85,35 +89,35 @@ public:
 
 	unsigned long SaveParameters(const char* filename);
 
-	NxLibItem& getCamera() { return m_Camera; }
-	
 	bool isInitialized() {return m_initialized;}
 	bool isOpen() {return m_open;}
 
 private:
 	
-	NxLibItem m_Camera;					///< accessor element to the opened Ensenso camera
-
+	EnsensoN30 m_ensensoCamera;		///< ensenso sensor
+	IDSuEyeCamera m_idsUEyeCamera;	///< IDS uEye sensor
+	NxLibItem m_idsUEyeCamera_nx;	///< IDS uEye sensor
+	
 	t_cameraType m_CameraType;			///< Camera Type
 
-	t_EnsensoN30VideoFormat m_VideoFormat; ///< Video format of color camera
-
-	std::string m_xmlTagName;	///< xml tag of this camera in cameraSensors.ini file
+	t_EnsensoIDSColorRackVideoFormat m_VideoFormat; ///< Video format of color camera
 
 	//*******************************************************************************
 	// Camera specific members
 	//*******************************************************************************
-	
-	std::string m_Serial;		///< serial number of the device
 
-	std::string m_JSONSettings;		///< JSON settings string for camera
+	std::string m_ensensoSerial;		///< serial number of the ensenso device
+	std::string m_idsUEyeSerial;		///< serial number of the IDS device
+
+	int m_width;		///< image width
+	int m_height;		///< image height
 
 	unsigned long LoadParameters(const char* filename, int cameraIndex);
 };
 
 /// Creates, intializes and returns a smart pointer object for the camera.
 /// @return Smart pointer, refering to the generated object
-__DLL_LIBCAMERASENSORS__ AbstractRangeImagingSensorPtr CreateRangeImagingSensor_EnsensoN30();
+__DLL_LIBCAMERASENSORS__ AbstractRangeImagingSensorPtr CreateRangeImagingSensor_EnsensoIDSColorRack();
 
 } // End namespace ipa_CameraSensors
-#endif // __IPA_ENSENSO_N30_H__
+#endif // __IPA_ENSENSO_IDS_COLOR_RACK_H__

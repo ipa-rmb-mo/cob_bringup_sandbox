@@ -78,7 +78,7 @@ class __DLL_LIBCAMERASENSORS__ IDSuEyeCamera : public AbstractColorCamera
 	public:
 
 		/// Constructor
-		IDSuEyeCamera();
+		IDSuEyeCamera(const std::string xmlTagName = "IDSuEyeCamera_");
 		
 		/// Destructor
 		~IDSuEyeCamera();
@@ -190,6 +190,8 @@ class __DLL_LIBCAMERASENSORS__ IDSuEyeCamera : public AbstractColorCamera
 		t_ColorCameraParameters m_ColorCameraParameters; ///< Storage for xml configuration file data
 		
 		unsigned int m_BufferSize; ///< Number of images, the camera buffers internally
+
+		std::string m_xmlTagName;	///< xml tag of this camera in cameraSensors.ini file
 		
 	private:
 
