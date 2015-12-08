@@ -9,6 +9,8 @@
 #else
 	#include "cob_bringup_sandbox/cob_camera_sensors_ipa/common/include/cob_camera_sensors_ipa/EnsensoIDSColorRack.h"
 	#include "cob_perception_common/cob_vision_utils/common/include/cob_vision_utils/GlobalDefines.h"
+
+	#include <fstream>
 #endif
 
 
@@ -87,6 +89,28 @@ unsigned long EnsensoIDSColorRack::Init(std::string directory, int cameraIndex)
 	{
 		std::cout << "Opening NxLib and waiting for cameras to be detected\n";
 		nxLibInitialize(true);
+
+		// import camera calibration if file exists
+		std::string calibration_file = m_parameter_files_directory + "ids_ueye_calibration.json";
+		std::ifstream file(calibration_file.c_str(), std::ios::in);
+		if (file.is_open() == false)
+		{
+			std::cerr << "WARNING - EnsensoIDSColorRack::open:" << std::endl;
+			std::cerr << "\t ... Could not open calibration file '" << calibration_file << "'" << std::endl;
+		}
+		else
+		{
+			// read in file
+			std::stringstream json_calibration;
+			std::string line;
+			while (file.eof() == false)
+			{
+				std::getline(file, line);
+				json_calibration << line << std::endl;
+			}
+			m_JSONCalibration = json_calibration.str();
+		}
+		file.close();
 	}
 	catch (NxLibException ex)
 	{
@@ -147,6 +171,13 @@ unsigned long EnsensoIDSColorRack::Open()
 		NxLibCommand open(cmdOpen); // When calling the 'execute' method in this object, it will synchronously execute the command 'cmdOpen'
 		open.parameters()[itmCameras] = serial; // Set parameters for the open command
 		open.execute();
+
+		// set camera calibration
+		if (m_JSONCalibration.length() > 2)
+		{
+			std::cout << "Setting the following camera calibration via json string:\n" << m_JSONCalibration << "\n----------" << std::endl;
+			m_idsUEyeCamera_nx.setJson(m_JSONCalibration, true);
+		}
 
 		// load parameters from file
 		NxLibCommand loadUEyeParameterSet(cmdLoadUEyeParameterSet);

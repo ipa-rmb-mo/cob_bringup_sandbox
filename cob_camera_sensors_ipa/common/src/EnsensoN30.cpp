@@ -73,7 +73,7 @@ unsigned long EnsensoN30::Init(std::string directory, int cameraIndex)
 		return ipa_Utils::RET_FAILED;
 	}
 
-	// import camera settings file if it exists
+	// import camera settings if file exists
 	std::string settings_file = directory + "N30-settings.json";
 	std::ifstream file(settings_file.c_str(), std::ios::in);
 	if (file.is_open() == false)
@@ -92,8 +92,30 @@ unsigned long EnsensoN30::Init(std::string directory, int cameraIndex)
 			json_settings << line << std::endl;
 		}
 		m_JSONSettings = json_settings.str();
-		file.close();
 	}
+	file.close();
+
+	// import camera calibration if file exists
+	std::string calibration_file = directory + "N30-calibration.json";
+	file.open(calibration_file.c_str(), std::ios::in);
+	if (file.is_open() == false)
+	{
+		std::cerr << "WARNING - EnsensoCamera::open:" << std::endl;
+		std::cerr << "\t ... Could not open calibration file '" << calibration_file << "'" << std::endl;
+	}
+	else
+	{
+		// read in file
+		std::stringstream json_calibration;
+		std::string line;
+		while (file.eof() == false)
+		{
+			std::getline(file, line);
+			json_calibration << line << std::endl;
+		}
+		m_JSONCalibration = json_calibration.str();
+	}
+	file.close();
 
 	try
 	{
@@ -165,6 +187,12 @@ unsigned long EnsensoN30::Open()
 		open.parameters()[itmCameras] = serial; // Set parameters for the open command
 		open.execute();
 
+		// set camera calibration
+		if (m_JSONCalibration.length() > 2)
+		{
+			std::cout << "Setting the following camera calibration via json string:\n" << m_JSONCalibration << "\n----------" << std::endl;
+			m_Camera.setJson(m_JSONCalibration, true);
+		}
 		// set camera settings
 		if (m_JSONSettings.length() > 2)
 		{

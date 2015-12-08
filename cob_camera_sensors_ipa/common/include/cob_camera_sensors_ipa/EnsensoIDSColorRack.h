@@ -113,6 +113,8 @@ private:
 	int m_height;		///< image height
 
 	std::string m_parameter_files_directory;	///< folder of parameter files
+	
+	std::string m_JSONCalibration;		///< JSON calibration string for camera
 
 	unsigned long LoadParameters(const char* filename, int cameraIndex);
 };
