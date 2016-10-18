@@ -34,6 +34,8 @@
 #ifndef __IPA_ENSENSO_N30_H__
 #define __IPA_ENSENSO_N30_H__
 
+#ifdef __BUILD_WITH_ENSENSO__
+
 #ifdef __LINUX__
 	#include <cob_camera_sensors/AbstractRangeImagingSensor.h>
 #else
@@ -117,4 +119,7 @@ private:
 __DLL_LIBCAMERASENSORS__ AbstractRangeImagingSensorPtr CreateRangeImagingSensor_EnsensoN30();
 
 } // End namespace ipa_CameraSensors
+
+#endif // #ifdef __BUILD_WITH_ENSENSO__
+
 #endif // __IPA_ENSENSO_N30_H__

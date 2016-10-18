@@ -1,4 +1,7 @@
 #include <cob_vision_utils/StdAfx.h>
+
+#ifdef __BUILD_WITH_ENSENSO__
+
 #ifdef __LINUX__
 	#include "cob_camera_sensors_ipa/EnsensoN30.h"	
 	#include "cob_vision_utils/GlobalDefines.h"
@@ -618,3 +621,5 @@ unsigned long EnsensoN30::LoadParameters(const char* filename, int cameraIndex)
 
 	return RET_OK;
 }
+
+#endif // __BUILD_WITH_ENSENSO__

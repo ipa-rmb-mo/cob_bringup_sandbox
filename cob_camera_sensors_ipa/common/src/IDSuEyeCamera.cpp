@@ -51,6 +51,9 @@
 *
 ****************************************************************/
 #include <cob_vision_utils/StdAfx.h>
+
+#ifdef __BUILD_WITH_IDS_UEYE__
+
 #ifdef __LINUX__
 #include "cob_camera_sensors_ipa/IDSuEyeCamera.h"
 
@@ -427,3 +430,5 @@ unsigned long IDSuEyeCamera::LoadParameters(const char* filename, int cameraInde
 
 	return RET_OK;
 }
+
+#endif // #ifdef __BUILD_WITH_IDS_UEYE__

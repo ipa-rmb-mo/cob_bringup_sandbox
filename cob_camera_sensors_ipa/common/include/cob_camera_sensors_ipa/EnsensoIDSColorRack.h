@@ -34,6 +34,8 @@
 #ifndef __IPA_ENSENSO_IDS_COLOR_RACK_H__
 #define __IPA_ENSENSO_IDS_COLOR_RACK_H__
 
+#if defined(__BUILD_WITH_ENSENSO__) && defined(__BUILD_WITH_IDS_UEYE__)
+
 #ifdef __LINUX__
 	#include <cob_camera_sensors/AbstractRangeImagingSensor.h>
 	#include "cob_camera_sensors_ipa/EnsensoN30.h"
@@ -124,4 +126,7 @@ private:
 __DLL_LIBCAMERASENSORS__ AbstractRangeImagingSensorPtr CreateRangeImagingSensor_EnsensoIDSColorRack();
 
 } // End namespace ipa_CameraSensors
+
+#endif // #if defined(__BUILD_WITH_ENSENSO__) && defined(__BUILD_WITH_IDS_UEYE__)
+
 #endif // __IPA_ENSENSO_IDS_COLOR_RACK_H__

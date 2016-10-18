@@ -1,4 +1,7 @@
 #include <cob_vision_utils/StdAfx.h>
+
+#if defined(__BUILD_WITH_ENSENSO__) && defined(__BUILD_WITH_IDS_UEYE__)
+
 #ifdef __LINUX__
 	#include "cob_camera_sensors_ipa/EnsensoIDSColorRack.h"	
 	#include "cob_vision_utils/GlobalDefines.h"
@@ -681,3 +684,5 @@ unsigned long EnsensoIDSColorRack::LoadParameters(const char* filename, int came
 
 	return RET_OK;
 }
+
+#endif // #if defined(__BUILD_WITH_ENSENSO__) && defined(__BUILD_WITH_IDS_UEYE__)

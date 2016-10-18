@@ -59,6 +59,8 @@
 #ifndef __IPA_IDSUEYECAMERA_H__
 #define __IPA_IDSUEYECAMERA_H__
 
+#ifdef __BUILD_WITH_IDS_UEYE__
+
 #ifdef __LINUX__
 	#include "cob_camera_sensors/AbstractColorCamera.h"
 #else
@@ -213,4 +215,7 @@ __DLL_LIBCAMERASENSORS__ AbstractColorCameraPtr CreateColorCamera_IDSuEyeCamera(
 
 
 } // end namespace
+
+#endif // __BUILD_WITH_IDS_UEYE__
+
 #endif // __IPA_IDSUEYECAMERA_H__
