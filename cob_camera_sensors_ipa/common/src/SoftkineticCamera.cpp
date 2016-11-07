@@ -85,9 +85,6 @@ SoftkineticCamera::SoftkineticCamera()
 	m_open = false;
 
 	m_BufferSize = 1;
-
-
-
 }
 
 SoftkineticCamera::~SoftkineticCamera()
@@ -97,7 +94,7 @@ SoftkineticCamera::~SoftkineticCamera()
 
 	if (isInitialized())
 	{
-
+		// nothing to clean
 	}
 }
 
@@ -149,15 +146,108 @@ unsigned long SoftkineticCamera::Open()
 		return (RET_OK | RET_CAMERA_ALREADY_OPEN);
 	}
 	
-
-	//t_cameraProperty prop;
-	//prop.propertyID = PROP_CAMERA_RESOLUTION;
-	//m_idsUEyeCamera.GetProperty(&prop);
-	//m_width = prop.cameraResolution.xResolution;
-	//m_height = prop.cameraResolution.yResolution;
-
-
-
+	////////////////////////////////////////////////////////////////////////////////
+	// Get the currently available devices
+	std::vector<DepthSense::Device> devices = m_context.getDevices();
+	if (devices.size() == 0)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::Open:" << std::endl;
+		std::cerr << "\t ... No device connected." << std::endl;
+		return ipa_Utils::RET_FAILED;
+	}
+	if (!((size_t)m_device_index < devices.size()))
+	{
+		std::cerr << "ERROR - SoftkineticCamera::Open:" << std::endl;
+		std::cerr << "\t ... Device index " << m_device_index << " is invalid for " << devices.size() << " devices." << std::endl;
+		return ipa_Utils::RET_FAILED;
+	}
+	int32_t real_device_index = 0;
+	if (m_device_serial_number == "")
+	{
+		real_device_index = m_device_index;
+	}
+	else
+	{
+		real_device_index = -1;
+		for (int32_t idx = 0; idx < (int32_t)devices.size(); idx++)
+		{
+			DepthSense::Device& current_device = devices[idx];
+			if (current_device.getSerialNumber() == m_device_serial_number)
+			{
+				real_device_index = idx;
+				std::cerr << "INFO - SoftkineticCamera::Open:" << std::endl;
+				std::cerr << "\t ... Found camera with serial number " << m_device_serial_number << " at index " << real_device_index << std::endl;
+				break;
+			}
+		}
+		if (real_device_index < 0)
+		{
+			std::cerr << "ERROR - SoftkineticCamera::Open:" << std::endl;
+			std::cerr << "\t ... Could not find device matching serial number to [" << m_device_serial_number << "]." << std::endl;
+			return ipa_Utils::RET_FAILED;
+		}
+	}
+	////////////////////////////////////////////////////////////////////////////////
+	// Get the desired device
+	DepthSense::Device& device = devices[real_device_index];
+	std::cerr << "INFO - SoftkineticCamera::Open:" << std::endl;
+	std::cerr << "\t ... Configuring camera with index " << real_device_index << " and serial number [" << device.getSerialNumber() << "]" << std::endl;
+	// Configure the device
+	Callback<void(DepthSense::Device,DepthSense::Device::NodeAddedData)>::func = std::bind(&SoftkineticCamera::OnNodeConnected, this, std::placeholders::_1, std::placeholders::_2);
+	callback_nodeadd_t func_nodeadd = static_cast<callback_nodeadd_t>(Callback<void(DepthSense::Device,DepthSense::Device::NodeAddedData)>::callback);
+	device.nodeAddedEvent().connect(func_nodeadd);
+	Callback<void(DepthSense::Device,DepthSense::Device::NodeRemovedData)>::func = std::bind(&SoftkineticCamera::OnNodeRemoved, this, std::placeholders::_1, std::placeholders::_2);
+	callback_noderemove_t func_noderemove = static_cast<callback_noderemove_t>(Callback<void(DepthSense::Device,DepthSense::Device::NodeRemovedData)>::callback);
+	device.nodeRemovedEvent().connect(func_noderemove);
+	// Configure the first time - it may not initialize properly this time, so we do it twice
+	// Get the nodes of the device
+	std::vector<DepthSense::Node> device_nodes = device.getNodes();
+	// Configure the nodes
+	for (size_t idx = 0; idx < device_nodes.size(); idx++)
+	{
+		DepthSense::Node& node = device_nodes[idx];
+		if (node.is<DepthSense::DepthNode>())
+		{
+			m_depth_node = node.as<DepthSense::DepthNode>();
+			ConfigureDepthNode(m_depth_node);
+			m_context.registerNode(m_depth_node);
+		}
+		if (node.is<DepthSense::ColorNode>())
+		{
+			m_color_node = node.as<DepthSense::ColorNode>();
+			ConfigureColorNode(m_color_node);
+			m_context.registerNode(m_color_node);
+		}
+	}
+	m_context.startNodes();
+	m_open = true;
+	Close();
+	////////////////////////////////////////////////////////////////////////////////
+	// Configure the second time - it should properly initialize this time
+	// Get the nodes of the device
+	device_nodes = device.getNodes();
+	// Configure the nodes
+	for (size_t idx = 0; idx < device_nodes.size(); idx++)
+	{
+		DepthSense::Node& node = device_nodes[idx];
+		if (node.is<DepthSense::DepthNode>())
+		{
+			m_depth_node = node.as<DepthSense::DepthNode>();
+			ConfigureDepthNode(m_depth_node);
+			m_context.registerNode(m_depth_node);
+		}
+		if (node.is<DepthSense::ColorNode>())
+		{
+			m_color_node = node.as<DepthSense::ColorNode>();
+			ConfigureColorNode(m_color_node);
+			m_context.registerNode(m_color_node);
+		}
+	}
+	////////////////////////////////////////////////////////////////////////////////
+	m_context.startNodes();
+	std::cerr << "INFO - SoftkineticCamera::Open:" << std::endl;
+	std::cerr << "\t ... Starting camera stream." << std::endl;
+	
 	std::cout << "*************************************************" << std::endl;
 	std::cout << "SoftkineticCamera::Open: SoftkineticCamera camera device OPEN" << std::endl;
 	std::cout << "*************************************************" << std::endl << std::endl;
@@ -173,6 +263,24 @@ unsigned long SoftkineticCamera::Close()
 		return RET_OK;
 
 	std::cout << "INFO - SoftkineticCamera: Closing device..." << std::endl;
+
+	m_context.stopNodes();
+	if (m_color_node.isSet())
+	{
+		Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewColorSample, this, std::placeholders::_1, std::placeholders::_2);
+		callback_newcolorsample_t func_newcolorsample = static_cast<callback_newcolorsample_t>(Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::callback);
+		m_color_node.newSampleReceivedEvent().disconnect(func_newcolorsample);
+		m_context.releaseControl(m_color_node);
+		m_context.unregisterNode(m_color_node);
+	}
+	if (m_depth_node.isSet())
+	{
+		Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewDepthSample, this, std::placeholders::_1, std::placeholders::_2);
+		callback_newdepthsample_t func_newdepthsample = static_cast<callback_newdepthsample_t>(Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::callback);
+		m_depth_node.newSampleReceivedEvent().disconnect(func_newdepthsample);
+		m_context.releaseControl(m_depth_node);
+		m_context.unregisterNode(m_depth_node);
+	}
 
 	m_open = false;
 	return RET_OK;
@@ -191,6 +299,515 @@ void SoftkineticCamera::OnDeviceRemoved(DepthSense::Context context, DepthSense:
     UNUSED(data);
 }
 
+void SoftkineticCamera::OnNodeConnected(DepthSense::Device device, DepthSense::Device::NodeAddedData data)
+{
+	UNUSED(device);
+	if (data.node.is<DepthSense::DepthNode>())
+	{
+		m_depth_node = data.node.as<DepthSense::DepthNode>();
+		ConfigureDepthNode(m_depth_node);
+		m_context.registerNode(m_depth_node);
+	}
+	if (data.node.is<DepthSense::ColorNode>())
+	{
+		m_color_node = data.node.as<DepthSense::ColorNode>();
+		ConfigureColorNode(m_color_node);
+		m_context.registerNode(m_color_node);
+	}
+	
+	std::cerr << "INFO - SoftkineticCamera::OnNodeConnected:" << std::endl;
+	std::cerr << "\t ... Node connected." << std::endl;
+}
+
+void SoftkineticCamera::OnNodeRemoved(DepthSense::Device device, DepthSense::Device::NodeRemovedData data)
+{
+	UNUSED(device);
+	if (data.node.is<DepthSense::ColorNode>() && (data.node.as<DepthSense::ColorNode>() == m_color_node))
+	{
+		Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewColorSample, this, std::placeholders::_1, std::placeholders::_2);
+		callback_newcolorsample_t func_newcolorsample = static_cast<callback_newcolorsample_t>(Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::callback);
+		m_color_node.newSampleReceivedEvent().disconnect(func_newcolorsample);
+		m_color_node.unset();
+	}
+	if (data.node.is<DepthSense::DepthNode>() && (data.node.as<DepthSense::DepthNode>() == m_depth_node))
+	{
+		Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewDepthSample, this, std::placeholders::_1, std::placeholders::_2);
+		callback_newdepthsample_t func_newdepthsample = static_cast<callback_newdepthsample_t>(Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::callback);
+		m_depth_node.newSampleReceivedEvent().disconnect(func_newdepthsample);
+		m_depth_node.unset();
+	}
+	std::cerr << "INFO - SoftkineticCamera::OnNodeRemoved:" << std::endl;
+	std::cerr << "\t ... Node removed." << std::endl;
+}
+
+void SoftkineticCamera::ConfigureDepthNode(DepthSense::DepthNode& depth_node)
+{
+	std::cerr << "INFO - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+	std::cerr << "\t ... Configuring new DepthNode ..." << std::endl;
+	// Register the event handler
+	Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewDepthSample, this, std::placeholders::_1, std::placeholders::_2);
+	callback_newdepthsample_t func_newdepthsample = static_cast<callback_newdepthsample_t>(Callback<void(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData)>::callback);
+	depth_node.newSampleReceivedEvent().connect(func_newdepthsample);
+	// Try to configure the node
+	try
+	{
+		m_context.requestControl(depth_node, 0);
+		depth_node.setConfiguration(m_depth_config.base_config);
+		depth_node.setDepthMap3Planes(m_depth_config.enable_xyz_depth);
+		depth_node.setDepthMapFloatingPoint3Planes(m_depth_config.enable_floatingpoint_xyz_depth);
+		depth_node.setEnableAccelerometer(m_depth_config.enable_accelerometer);
+		depth_node.setEnableConfidenceMap(m_depth_config.enable_confidence_map);
+		depth_node.setEnableDepthMap(m_depth_config.enable_depth_map);
+		depth_node.setEnableDepthMapFloatingPoint(m_depth_config.enable_floatingpoint_depth_map);
+		depth_node.setEnablePhaseMap(m_depth_config.enable_phase_map);
+		depth_node.setEnableUvMap(m_depth_config.enable_uv_map);
+		depth_node.setEnableVertices(m_depth_config.enable_vertices);
+		depth_node.setEnableVerticesFloatingPoint(m_depth_config.enable_floatingpoint_vertices);
+		if (depth_node.illuminationLevelIsReadOnly())
+		{
+			std::cerr << "WARN - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+			std::cerr << "\t ... Illumination level cannot be set on this camera." << std::endl;
+		}
+		else
+		{
+			depth_node.setIlluminationLevel(m_depth_config.illumination_level);
+		}
+		std::cerr << "INFO - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... New DepthNode configuration applied." << std::endl;
+	}
+	catch (DepthSense::ArgumentException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Argument exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::UnauthorizedAccessException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Unauthorized access exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::IOException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... IO exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::InvalidOperationException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Invalid operation exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::ConfigurationException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Configuration exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::StreamingException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Streaming exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::TimeoutException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Timeout exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+	catch (DepthSense::Exception& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureDepthNode:" << std::endl;
+		std::cerr << "\t ... Unplanned exception [" << e.what() << "] caught when attempting to configure depth node." << std::endl;
+	}
+}
+
+void SoftkineticCamera::ConfigureColorNode(DepthSense::ColorNode& color_node)
+{
+	std::cerr << "INFO - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+	std::cerr << "\t ... Configuring new ColorNode ..." << std::endl;
+	// Register the event handler
+	Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::func = std::bind(&SoftkineticCamera::OnNewColorSample, this, std::placeholders::_1, std::placeholders::_2);
+	callback_newcolorsample_t func_newcolorsample = static_cast<callback_newcolorsample_t>(Callback<void(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData)>::callback);
+	color_node.newSampleReceivedEvent().connect(func_newcolorsample);
+	// Try to configure the node
+	try
+	{
+		m_context.requestControl(color_node, 0);
+		color_node.setConfiguration(m_color_config.base_config);
+		color_node.setBrightness(m_color_config.brightness);
+		color_node.setContrast(m_color_config.contrast);
+		color_node.setEnableColorMap(m_color_config.enable_color_map);
+		color_node.setEnableCompressedData(m_color_config.enable_compressed_data);
+		color_node.setGamma(m_color_config.gamma);
+		color_node.setHue(m_color_config.hue);
+		color_node.setSaturation(m_color_config.saturation);
+		color_node.setSharpness(m_color_config.sharpness);
+		// Set the exposure
+		if (color_node.exposureAutoIsReadOnly() || color_node.exposureAutoPriorityIsReadOnly() || color_node.exposureIsReadOnly())
+		{
+			std::cerr << "WARN - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+			std::cerr << "\t ... Exposure cannot be set on this camera." << std::endl;
+		}
+		else
+		{
+			if (m_color_config.enable_priority_auto_exposure_mode)
+			{
+				color_node.setExposureAuto(DepthSense::EXPOSURE_AUTO_APERTURE_PRIORITY);
+				color_node.setExposureAutoPriority(true);
+			}
+			else
+			{
+				color_node.setExposureAuto(DepthSense::EXPOSURE_AUTO_MANUAL);
+				color_node.setExposureAutoPriority(false);
+				color_node.setExposure(m_color_config.exposure);
+			}
+		}
+		// Set the white balance
+		if (m_color_config.enable_auto_white_balance)
+		{
+			color_node.setWhiteBalanceAuto(true);
+		}
+		else
+		{
+			color_node.setWhiteBalanceAuto(false);
+			color_node.setWhiteBalance(m_color_config.white_balance);
+		}
+		std::cerr << "INFO - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... New ColorNode configuration applied." << std::endl;
+	}
+	catch (DepthSense::ArgumentException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Argument exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::UnauthorizedAccessException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Unauthorized access exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::IOException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... IO exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::InvalidOperationException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Invalid operation exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::ConfigurationException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Configuration exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::StreamingException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Streaming exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::TimeoutException& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Timeout exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+	catch (DepthSense::Exception& e)
+	{
+		std::cerr << "ERROR - SoftkineticCamera::ConfigureColorNode:" << std::endl;
+		std::cerr << "\t ... Unplanned exception [" << e.what() << "] caught when attempting to configure color node." << std::endl;
+	}
+}
+
+
+void SoftkineticCamera::OnNewDepthSample(DepthSense::DepthNode node, DepthSense::DepthNode::NewSampleReceivedData data)
+{
+	UNUSED(node);
+	//ros::Time depth_timestamp = ros::Time::now();
+	//// Setup the camerainfo messages if they aren't already populated
+	//if (g_rgb_camerainfo_set == false)
+	//{
+	//	SetupCameraInfo(g_rgb_camerainfo, data.stereoCameraParameters.colorIntrinsics);
+	//	g_rgb_camerainfo_set = true;
+	//	ROS_INFO("Set RGB CameraInfo with parameters provided by the camera");
+	//}
+	//if (g_depth_camerainfo_set == false)
+	//{
+	//	SetupCameraInfo(g_depth_camerainfo, data.stereoCameraParameters.depthIntrinsics);
+	//	g_depth_camerainfo_set = true;
+	//	ROS_INFO("Set Depth CameraInfo with parameters provided by the camera");
+	//}
+
+	// First, we generate the raw depth image
+	int32_t width = 0;
+	int32_t height = 0;
+	DepthSense::FrameFormat_toResolution(data.captureConfiguration.frameFormat, &width, &height);
+
+	// Copy and build the depth image
+	float* raw_depth_floats = const_cast<float*>(static_cast<const float*>(data.depthMapFloatingPoint));
+	std::vector<float> depth_floats(raw_depth_floats, raw_depth_floats + (width * height));
+	cv::Mat new_image_depth = cv::Mat(depth_floats).reshape(1, height);
+	// Filter the depth image
+	cv::Mat new_image_depth_filtered(new_image_depth.rows, new_image_depth.cols, CV_32FC1);
+	cv::Mat depth_mean_kernel(3, 3, CV_32FC1);
+	depth_mean_kernel.setTo(1.0);
+	cv::filter2D(new_image_depth, new_image_depth_filtered, CV_32FC1, depth_mean_kernel);
+	m_current_depth_image_mutex.lock();
+	m_current_depth_image = new_image_depth_filtered.clone();
+	m_current_depth_image_mutex.unlock();
+
+	// retrieve the registered cartesian image (i.e. the 3d measurements are mapped to the right pixel coordinates of the color image)
+	// get the (x,y,z) vertices
+	DepthSense::FPVertex* raw_vertices = const_cast<DepthSense::FPVertex*>(static_cast<const DepthSense::FPVertex*>(data.verticesFloatingPoint));
+	std::vector<DepthSense::FPVertex> vertices(raw_vertices, raw_vertices + (width * height));
+	// Get the UV map that maps the color map and vertices together
+	DepthSense::UV* raw_uv = const_cast<DepthSense::UV*>(static_cast<const DepthSense::UV*>(data.uvMap));
+	std::vector<DepthSense::UV> uv(raw_uv, raw_uv + (width * height));
+	// Copy and build the confidences
+	int16_t* raw_confidence_shorts = const_cast<int16_t*>(static_cast<const int16_t*>(data.confidenceMap));
+	std::vector<int16_t> confidence_shorts(raw_confidence_shorts, raw_confidence_shorts + (width * height));
+	// assemble the data
+	m_current_cartesian_image_mutex.lock();
+	m_current_cartesian_image = cv::Mat::zeros(height, width, CV_32FC3);
+	for (size_t idx = 0; idx < vertices.size(); idx++)
+	{
+		float x = vertices[idx].x;
+		float y = -vertices[idx].y;
+		float z = vertices[idx].z;
+		if (is_vertex_valid(x, y, z))
+		{
+			float uf = uv[idx].u;
+			float vf = uv[idx].v;
+			if (is_uv_valid(uf, vf))
+			{
+				// Filter based on confidence
+				int32_t confidence = (int32_t)confidence_shorts[idx];
+				if (confidence >= m_confidence_threshold)
+				{
+					// Make the point
+					int v = (int)(vf * height);
+					int u = (int)(uf * width);
+					m_current_cartesian_image.at<cv::Vec3f>(v,u) = cv::Vec3f(x, y, z);
+				}
+			}
+		}
+	}
+	m_current_cartesian_image_mutex.unlock();
+
+	//// Second, generate the pointcloud
+	//DepthSense::FPVertex* raw_vertices = const_cast<DepthSense::FPVertex*>(static_cast<const DepthSense::FPVertex*>(data.verticesFloatingPoint));
+	//std::vector<DepthSense::FPVertex> vertices(raw_vertices, raw_vertices + (width * height));
+	//// Make the XYZ pointcloud
+	//pcl::PointCloud<pcl::PointXYZI> pcl_pointcloud;
+	//for (size_t idx = 0; idx < vertices.size(); idx++)
+	//{
+	//	float x = vertices[idx].x;
+	//	float y = -vertices[idx].y;
+	//	float z = vertices[idx].z;
+	//	if (is_vertex_valid(x, y, z))
+	//	{
+	//		// Filter based on confidence
+	//		int32_t confidence = (int32_t)confidence_shorts[idx];
+	//		if (confidence >= g_confidence_threshold)
+	//		{
+	//			pcl::PointXYZI new_point;
+	//			new_point.x = x;
+	//			new_point.y = y;
+	//			new_point.z = z;
+	//			new_point.intensity = (float)confidence;
+	//			pcl_pointcloud.push_back(new_point);
+	//		}
+	//	}
+	//}
+
+	//// Make the XYZRGB pointcloud (if enabled)
+	//if (m_color_config.enable_color_map && !m_current_color_image.empty())
+	//{
+	//	// Get the UV map that maps the color map and vertices together
+	//	DepthSense::UV* raw_uv = const_cast<DepthSense::UV*>(static_cast<const DepthSense::UV*>(data.uvMap));
+	//	std::vector<DepthSense::UV> uv(raw_uv, raw_uv + (width * height));
+	//	// Make the XYZRGB pointcloud
+	//	pcl::PointCloud<pcl::PointXYZRGB> pcl_rgb_pointcloud;
+	//	// Make the matching UV map
+	//	pcl::PointCloud<pcl::PointUV> pcl_uv_pointcloud;
+	//	for (size_t idx = 0; idx < vertices.size(); idx++)
+	//	{
+	//		float x = vertices[idx].x;
+	//		float y = -vertices[idx].y;
+	//		float z = vertices[idx].z;
+	//		float u = uv[idx].u;
+	//		float v = uv[idx].v;
+	//		if (is_vertex_valid(x, y, z) && is_uv_valid(u, v))
+	//		{
+	//			// Lookup RGB colors
+	//			size_t image_height = (size_t)(v * g_current_color_image.rows);
+	//			size_t image_width = (size_t)(u * g_current_color_image.cols);
+	//			cv::Vec3b pixel = g_current_color_image.at<cv::Vec3b>(image_height, image_width);
+	//			uint8_t blue = pixel[0];
+	//			uint8_t green = pixel[1];
+	//			uint8_t red = pixel[2];
+	//			// Filter based on confidence
+	//			int32_t confidence = (int32_t)confidence_shorts[idx];
+	//			if (confidence >= g_confidence_threshold)
+	//			{
+	//				// Make the point
+	//				pcl::PointXYZRGB new_xyzrgb_point;
+	//				new_xyzrgb_point.x = x;
+	//				new_xyzrgb_point.y = y;
+	//				new_xyzrgb_point.z = z;
+	//				new_xyzrgb_point.r = red;
+	//				new_xyzrgb_point.g = green;
+	//				new_xyzrgb_point.b = blue;
+	//				pcl_rgb_pointcloud.push_back(new_xyzrgb_point);
+	//				// Make the UV
+	//				pcl::PointUV new_uv_point;
+	//				new_uv_point.u = u;
+	//				new_uv_point.v = v;
+	//				pcl_uv_pointcloud.push_back(new_uv_point);
+	//			}
+	//		}
+	//	}
+	//	//// Publish the cloud without filtering
+	//	//// Convert the XYZRGB pointcloud to ROS message
+	//	//sensor_msgs::PointCloud2 ros_rgb_pointcloud;
+	//	//pcl::toROSMsg(pcl_rgb_pointcloud, ros_rgb_pointcloud);
+	//	//ros_rgb_pointcloud.header.frame_id = g_depth_optical_frame_name;
+	//	//ros_rgb_pointcloud.header.stamp = depth_timestamp;
+	//	//g_rgb_pointcloud_pub.publish(ros_rgb_pointcloud);
+	//	//// Convert the UV pointcloud to ROS message
+	//	//sensor_msgs::PointCloud2 ros_uv_pointcloud;
+	//	//pcl::toROSMsg(pcl_uv_pointcloud, ros_uv_pointcloud);
+	//	//ros_uv_pointcloud.header.frame_id = g_depth_optical_frame_name;
+	//	//ros_uv_pointcloud.header.stamp = depth_timestamp;
+	//	//g_uv_pointcloud_pub.publish(ros_uv_pointcloud);
+	//	// Make the "registered" depth image
+	//	cv::Mat new_image_depth_registered(new_image_depth.rows, new_image_depth.cols, CV_32FC3, cv::Scalar(0.0, 0.0, 0.0));
+	//	// Make the "index image" that maps pixels in the image to the corresponding index in the pointcloud
+	//	cv::Mat new_image_depth_indices(new_image_depth.rows, new_image_depth.cols, CV_32SC2, cv::Scalar(-1, -1));
+	//	int32_t xyz_filtered_vertex_index = 0;
+	//	int32_t uv_and_xyz_filtered_vertex_index = 0;
+	//	for (size_t idx = 0; idx < vertices.size(); idx++)
+	//	{
+	//		// Filter based on confidence
+	//		int32_t confidence = (int32_t)confidence_shorts[idx];
+	//		if (confidence >= g_confidence_threshold)
+	//		{
+	//			float x = vertices[idx].x;
+	//			float y = -vertices[idx].y;
+	//			float z = vertices[idx].z;
+	//			float u = uv[idx].u;
+	//			float v = uv[idx].v;
+	//			if (is_vertex_valid(x, y, z))
+	//			{
+	//				if (is_uv_valid(u, v))
+	//				{
+	//					// Get the matching position in the image
+	//					size_t image_height = (size_t)(v * new_image_depth_registered.rows);
+	//					size_t image_width = (size_t)(u * new_image_depth_registered.cols);
+	//					// Set that location in the image with the current vertex
+	//					new_image_depth_registered.at<cv::Vec3f>(image_height, image_width) = cv::Vec3f(x, y, z);
+	//					new_image_depth_indices.at<cv::Vec2i>(image_height, image_width) = cv::Vec2i(xyz_filtered_vertex_index, uv_and_xyz_filtered_vertex_index);
+	//					uv_and_xyz_filtered_vertex_index++;
+	//				}
+	//				xyz_filtered_vertex_index++;
+	//			}
+	//		}
+	//	}
+	//	//// Convert the "registered" depth image to ROS and publish it
+	//	//std_msgs::Header new_registered_depth_image_header;
+	//	//new_registered_depth_image_header.frame_id = g_depth_optical_frame_name;
+	//	//new_registered_depth_image_header.stamp = depth_timestamp;
+	//	//sensor_msgs::Image new_registed_depth_image;
+	//	//cv_bridge::CvImage new_registered_depth_image_converted(new_registered_depth_image_header, sensor_msgs::image_encodings::TYPE_32FC3, new_image_depth_registered);
+	//	//new_registered_depth_image_converted.toImageMsg(new_registed_depth_image);
+	//	//sensor_msgs::CameraInfo new_registered_depth_image_camerainfo = g_depth_camerainfo;
+	//	//new_registered_depth_image_camerainfo.header = new_registered_depth_image_header;
+	//	//// Publish the image
+	//	//g_registered_depth_pub.publish(new_registed_depth_image, new_registered_depth_image_camerainfo);
+	//	//// Convert the "index image" to ROS and publish it
+	//	//std_msgs::Header new_indices_depth_image_header;
+	//	//new_indices_depth_image_header.frame_id = g_depth_optical_frame_name;
+	//	//new_indices_depth_image_header.stamp = depth_timestamp;
+	//	//sensor_msgs::Image new_indices_depth_image;
+	//	//cv_bridge::CvImage new_indices_depth_image_converted(new_indices_depth_image_header, sensor_msgs::image_encodings::TYPE_32SC2, new_image_depth_indices);
+	//	//new_indices_depth_image_converted.toImageMsg(new_indices_depth_image);
+	//	//sensor_msgs::CameraInfo new_indices_depth_image_camerainfo = g_depth_camerainfo;
+	//	//new_indices_depth_image_camerainfo.header = new_indices_depth_image_header;
+	//	//// Publish the image
+	//	//g_index_pub.publish(new_indices_depth_image, new_indices_depth_image_camerainfo);
+	//}
+	//else if (g_color_config.enable_color_map && g_current_color_image.empty())
+	//{
+	//	ROS_WARN("XYZRGB pointclouds enabled, but no color image received yet. Not publishing XYZRGB pointcloud");
+	//}
+}
+
+inline bool SoftkineticCamera::is_vertex_valid(float x, float y, float z)
+{
+    if (x != -2.0 || y != -2.0 || z != -2.0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+inline bool SoftkineticCamera::is_uv_valid(float u, float v)
+{
+    if (u != -FLT_MAX || v != -FLT_MAX)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void SoftkineticCamera::OnNewColorSample(DepthSense::ColorNode node, DepthSense::ColorNode::NewSampleReceivedData data)
+{
+	UNUSED(node);
+	// Make new OpenCV container
+	int32_t width = 0;
+	int32_t height = 0;
+	DepthSense::FrameFormat_toResolution(data.captureConfiguration.frameFormat, &width, &height);
+	cv::Mat new_image_bgr8(height, width, CV_8UC3);
+	// If the image is in YUY2 mode, we need to convert it to BGR8 first
+	if (data.captureConfiguration.compression == DepthSense::COMPRESSION_TYPE_YUY2)
+	{
+		// Make the intermediate container for the YUY2 image
+		cv::Mat new_image_yuy2(height, width, CV_8UC2);
+		// Copy the data in
+		new_image_yuy2.data = const_cast<uint8_t*>(static_cast<const uint8_t*>(data.colorMap));
+		// Convert to BGR
+		cv::cvtColor(new_image_yuy2, new_image_bgr8, CV_YUV2BGR_YUY2);
+	}
+	// If the image is in MJPEG mode, it's already in BGR8
+	else
+	{
+		// Copy the data in
+		new_image_bgr8.data = const_cast<uint8_t*>(static_cast<const uint8_t*>(data.colorMap));
+	}
+	// Save the current color image
+	m_current_color_image_mutex.lock();
+	m_current_color_image = new_image_bgr8.clone();
+	m_current_color_image_mutex.unlock();
+
+	//// Convert the OpenCV image to ROS
+	//std_msgs::Header new_image_header;
+	//new_image_header.frame_id = g_rgb_optical_frame_name;
+	//new_image_header.stamp = ros::Time::now();
+	//sensor_msgs::Image new_image;
+	//cv_bridge::CvImage new_image_converted(new_image_header, sensor_msgs::image_encodings::BGR8, new_image_bgr8);
+	//new_image_converted.toImageMsg(new_image);
+	//if (g_rgb_camerainfo_set == true)
+	//{
+	//	sensor_msgs::CameraInfo new_image_camerainfo = g_rgb_camerainfo;
+	//	new_image_camerainfo.header = new_image_header;
+	//	// Publish the image
+	//	g_rgb_pub.publish(new_image, new_image_camerainfo);
+	//}
+	//else
+	//{
+	//	ROS_WARN("No RGB CameraInfo set, not publishing RGB image");
+	//}
+}
 
 unsigned long SoftkineticCamera::SetProperty(t_cameraProperty* cameraProperty) 
 {
@@ -209,21 +826,24 @@ unsigned long SoftkineticCamera::GetProperty(t_cameraProperty* cameraProperty)
 	switch (cameraProperty->propertyID)
 	{
 		case PROP_CAMERA_RESOLUTION:	
-			//cameraProperty->propertyType = TYPE_CAMERA_RESOLUTION;
-			//if (isOpen())
-			//{
-			//	cameraProperty->cameraResolution.xResolution = m_width;
-			//	cameraProperty->cameraResolution.yResolution = m_height;
-			//}
-			//else
-			//{
-			//	std::cout << "WARNING - SoftkineticCamera::GetProperty:" << std::endl;
-			//	std::cout << "\t ... Camera not open" << std::endl;
-			//	std::cout << "\t ... Returning default width and height of '" << IDS_SXGA_X_RES << "' x '" << IDS_SXGA_Y_RES << "'" << std::endl;
-			//	cameraProperty->cameraResolution.xResolution = IDS_SXGA_X_RES;
-			//	cameraProperty->cameraResolution.yResolution = IDS_SXGA_Y_RES;
-			//}
-			//break;
+			cameraProperty->propertyType = TYPE_CAMERA_RESOLUTION;
+			if (isOpen())
+			{
+				int32_t width = 0;
+				int32_t height = 0;
+				DepthSense::FrameFormat_toResolution(m_color_config.base_config.frameFormat, &width, &height);
+				cameraProperty->cameraResolution.xResolution = width;
+				cameraProperty->cameraResolution.yResolution = height;
+			}
+			else
+			{
+				std::cout << "WARNING - SoftkineticCamera::GetProperty:" << std::endl;
+				std::cout << "\t ... Camera not open" << std::endl;
+				std::cout << "\t ... Returning default width and height of '" << 1280 << "' x '" << 720 << "'" << std::endl;
+				cameraProperty->cameraResolution.xResolution = 1280;
+				cameraProperty->cameraResolution.yResolution = 720;
+			}
+			break;
 		case PROP_BRIGHTNESS:	
 		case PROP_WHITE_BALANCE_U:	
 		case PROP_HUE:	
@@ -256,28 +876,33 @@ unsigned long SoftkineticCamera::AcquireImages(cv::Mat* rangeImage, cv::Mat* col
 	int widthStepColor = -1;
 	int widthStepCartesian = -1;
 	
-	//if(rangeImage)
-	//{
-	//	// Depth image is upsampled according to the size of the color image
-	//	rangeImage->create(m_height, m_width, CV_32FC1);
-	//	rangeImageData = rangeImage->ptr<char>(0);
-	//	widthStepRange = rangeImage->step;
-	//}
-	//
-	//if(colorImage)
-	//{
-	//	colorImage->create(m_height, m_width, CV_8UC3);
-	//	colorImageData = colorImage->ptr<char>(0);
-	//	widthStepColor = colorImage->step;
-	//}	
+	// rescale everything to the color image resolution
+	int32_t width = 0;
+	int32_t height = 0;
+	DepthSense::FrameFormat_toResolution(m_color_config.base_config.frameFormat, &width, &height);
 
-	//if(cartesianImage)
-	//{
-	//	// Depth image is upsampled according to the size of the color image
-	//	cartesianImage->create(m_height, m_width, CV_32FC3);
-	//	cartesianImageData = cartesianImage->ptr<char>(0);
-	//	widthStepCartesian = cartesianImage->step;
-	//}
+	if(rangeImage)
+	{
+		// Depth image is upsampled according to the size of the color image
+		rangeImage->create(height, width, CV_32FC1);
+		rangeImageData = rangeImage->ptr<char>(0);
+		widthStepRange = rangeImage->step;
+	}
+	
+	if(colorImage)
+	{
+		colorImage->create(height, width, CV_8UC3);
+		colorImageData = colorImage->ptr<char>(0);
+		widthStepColor = colorImage->step;
+	}	
+
+	if(cartesianImage)
+	{
+		// Depth image is upsampled according to the size of the color image
+		cartesianImage->create(height, width, CV_32FC3);
+		cartesianImageData = cartesianImage->ptr<char>(0);
+		widthStepCartesian = cartesianImage->step;
+	}
 
 	if (!rangeImage && !colorImage && !cartesianImage)
 		return RET_OK;
@@ -288,9 +913,88 @@ unsigned long SoftkineticCamera::AcquireImages(cv::Mat* rangeImage, cv::Mat* col
 unsigned long SoftkineticCamera::AcquireImages(int widthStepRange, int widthStepGray, int widthStepCartesian, char* rangeImageData, char* colorImageData, char* cartesianImageData,
 										bool getLatestFrame, bool undistort, ipa_CameraSensors::t_ToFGrayImageType grayImageType)
 {
-	// point map z --> range image
-	// point map --> cartesian image
-	// ids image --> color image
+	// rescale everything to the color image resolution
+	int32_t width = 0;
+	int32_t height = 0;
+	DepthSense::FrameFormat_toResolution(m_color_config.base_config.frameFormat, &width, &height);
+
+	cv::Mat cartesian_image;
+	m_current_cartesian_image_mutex.lock();
+	if (m_current_cartesian_image.rows != height || m_current_cartesian_image.cols != width)
+		cv::resize(m_current_cartesian_image, cartesian_image, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
+	else
+		cartesian_image = m_current_cartesian_image.clone();
+	m_current_cartesian_image_mutex.unlock();
+
+	cv::Mat range_image;
+	m_current_depth_image_mutex.lock();
+	if (m_current_depth_image.rows != height || m_current_depth_image.cols != width)
+		cv::resize(m_current_depth_image, range_image, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
+	else
+		range_image = m_current_depth_image.clone();
+	m_current_depth_image_mutex.unlock();
+
+	cv::imshow("m_current_color_image", m_current_color_image);
+	cv::waitKey();
+
+	if (colorImageData)
+	{
+		m_current_color_image_mutex.lock();
+		unsigned char* p_colorImageData = (unsigned char*)colorImageData;
+		for (int v=0; v<height; ++v)
+		{
+			unsigned char* p_srcImageData = (unsigned char*)m_current_color_image.ptr(v);
+			for (int u=0; u<width; ++u)
+			{
+				*p_colorImageData = *p_srcImageData;
+				++p_colorImageData; ++p_srcImageData;
+				*p_colorImageData = *p_srcImageData;
+				++p_colorImageData; ++p_srcImageData;
+				*p_colorImageData = *p_srcImageData;
+				++p_colorImageData; ++p_srcImageData;
+			}
+		}
+		m_current_color_image_mutex.unlock();
+	}
+	std::cout << "1: " << cartesian_image.rows << "x" << cartesian_image.cols << "\t" << cartesian_image.at<cv::Vec3f>(718,974).val[0] <<  std::endl;
+	cv::imshow("cartesian_image", cartesian_image);
+	cv::waitKey();
+	if (cartesianImageData)
+	{
+		float* p_cartesianImageData = (float*)cartesianImageData;
+		for (int v=0; v<height; ++v)
+		{
+			std::cout << v << std::endl;
+			float* p_srcImageData = (float*)cartesian_image.ptr(v);
+			for (int u=0; u<width; ++u)
+			{
+				if (v>=718)	// 974
+					std::cout << "u=" << u << std::endl;
+				*p_cartesianImageData = 0.f;//cartesian_image.at<cv::Vec3f>(v,u).val[0];	//*p_srcImageData;
+				++p_cartesianImageData; //++p_srcImageData;
+				*p_cartesianImageData = 0.f;//cartesian_image.at<cv::Vec3f>(v,u).val[1];	//*p_srcImageData;
+				++p_cartesianImageData; //++p_srcImageData;
+				*p_cartesianImageData = 0.f;//cartesian_image.at<cv::Vec3f>(v,u).val[2];	//*p_srcImageData;
+				++p_cartesianImageData; //++p_srcImageData;
+			}
+		}
+	}
+	std::cout << "2" << std::endl;
+	cv::imshow("range_image", range_image);
+	cv::waitKey();
+	if (rangeImageData)
+	{
+		float* p_rangeImageData = (float*)rangeImageData;
+		for (int v=0; v<height; ++v)
+		{
+			float* p_srcImageData = (float*)range_image.ptr(v);
+			for (int u=0; u<width; ++u)
+			{
+				*p_rangeImageData = *p_srcImageData;
+				++p_rangeImageData; ++p_srcImageData;
+			}
+		}
+	}
 
 	// retrieve point cloud and ids image
 	//try
@@ -560,8 +1264,9 @@ unsigned long SoftkineticCamera::LoadParameters(const char* filename, int camera
 						std::cerr << "\t ... Can't find attribute '" << attribute_name << "' of tag '" << element_name << "'." << std::endl;
 						return (RET_FAILED | RET_XML_ATTR_NOT_FOUND);
 					}
-					if (m_device_serial_number == "")
+					if (m_device_serial_number == "0")
 					{
+						m_device_serial_number = "";
 						std::cerr << "INFO - SoftkineticCamera::LoadParameters:" << std::endl;
 						std::cerr << "\t ... Using DeviceIndex to select camera." << std::endl;
 					}
@@ -1083,6 +1788,12 @@ unsigned long SoftkineticCamera::LoadParameters(const char* filename, int camera
 				{
 					m_color_config.enable_auto_white_balance = false;
 				}
+				int32_t color_width = 0;
+				int32_t color_height = 0;
+				DepthSense::FrameFormat_toResolution(m_color_config.base_config.frameFormat, &color_width, &color_height);
+				m_current_color_image_mutex.lock();
+				m_current_color_image = cv::Mat::zeros(color_height, color_width, CV_8UC3);
+				m_current_color_image_mutex.unlock();
 
 ////////////////////////////////////////////////////////////////////////////////
 /////       Get the configuration parameters for the depth camera          /////
@@ -1305,6 +2016,15 @@ unsigned long SoftkineticCamera::LoadParameters(const char* filename, int camera
 					m_depth_config.enable_phase_map = false;
 					m_depth_config.enable_vertices = false;
 				}
+				int32_t depth_width = 0;
+				int32_t depth_height = 0;
+				DepthSense::FrameFormat_toResolution(m_depth_config.base_config.frameFormat, &depth_width, &depth_height);
+				m_current_depth_image_mutex.lock();
+				m_current_depth_image = cv::Mat::zeros(depth_height, depth_width, CV_8UC3);
+				m_current_depth_image_mutex.unlock();
+				m_current_cartesian_image_mutex.lock();
+				m_current_cartesian_image = cv::Mat::zeros(depth_height, depth_width, CV_8UC3);
+				m_current_cartesian_image_mutex.unlock();
 			}
 
 //************************************************************************************

@@ -51,6 +51,8 @@
 *
 ****************************************************************/
 
+/// implemented according to https://github.com/WPI-ARC/softkinetic_camera_driver/blob/master/softkinetic_camera/src/softkinetic_driver_node.cpp
+
 /// @file SoftkineticCamera.h
 /// Interface for Softkinetic cameras.
 /// @author Richard Bormann
@@ -67,6 +69,7 @@
 	#include <cob_driver/cob_camera_sensors/common/include/cob_camera_sensors/AbstractRangeImagingSensor.h>
 #endif
 
+#include <boost/thread/mutex.hpp>
 #include <opencv2/core/core.hpp>
 #include <set>
 
@@ -94,6 +97,10 @@
 
 	typedef void (*callback_deviceadd_t)(DepthSense::Context,DepthSense::Context::DeviceAddedData);
 	typedef void (*callback_deviceremove_t)(DepthSense::Context,DepthSense::Context::DeviceRemovedData);
+	typedef void (*callback_nodeadd_t)(DepthSense::Device, DepthSense::Device::NodeAddedData);
+	typedef void (*callback_noderemove_t)(DepthSense::Device, DepthSense::Device::NodeRemovedData);
+	typedef void (*callback_newdepthsample_t)(DepthSense::DepthNode, DepthSense::DepthNode::NewSampleReceivedData);
+	typedef void (*callback_newcolorsample_t)(DepthSense::ColorNode, DepthSense::ColorNode::NewSampleReceivedData);
 // end of trick for binding non-static member functions to callbacks
 
 namespace ipa_CameraSensors {
@@ -170,6 +177,9 @@ public:
 	bool isInitialized() {return m_initialized;}
 	bool isOpen() {return m_open;}
 
+	inline bool is_vertex_valid(float x, float y, float z);
+	inline bool is_uv_valid(float u, float v);
+
 private:
 	
 	t_cameraType m_CameraType;			///< Camera Type
@@ -192,9 +202,14 @@ private:
 	int32_t m_confidence_threshold;
 
 	// Save the current color map for coloring pointclouds
-	cv::Mat current_color_image;
-	
+	cv::Mat m_current_color_image;
+	boost::mutex m_current_color_image_mutex;
 
+	cv::Mat m_current_depth_image;
+	boost::mutex m_current_depth_image_mutex;
+	
+	cv::Mat m_current_cartesian_image;
+	boost::mutex m_current_cartesian_image_mutex;
 
 	//int m_width;		///< image width
 	//int m_height;		///< image height
@@ -203,9 +218,17 @@ private:
 	
 	//std::string m_JSONCalibration;		///< JSON calibration string for camera
 
-	void OnDeviceConnected(DepthSense::Context context, DepthSense::Context::DeviceAddedData data);
+	void ConfigureDepthNode(DepthSense::DepthNode& depth_node);
+	void ConfigureColorNode(DepthSense::ColorNode& color_node);
 
+	void OnDeviceConnected(DepthSense::Context context, DepthSense::Context::DeviceAddedData data);
 	void OnDeviceRemoved(DepthSense::Context context, DepthSense::Context::DeviceRemovedData data);
+
+	void OnNodeConnected(DepthSense::Device device, DepthSense::Device::NodeAddedData data);
+	void OnNodeRemoved(DepthSense::Device device, DepthSense::Device::NodeRemovedData data);
+
+	void OnNewDepthSample(DepthSense::DepthNode node, DepthSense::DepthNode::NewSampleReceivedData data);
+	void OnNewColorSample(DepthSense::ColorNode node, DepthSense::ColorNode::NewSampleReceivedData data);
 
 	unsigned long LoadParameters(const char* filename, int cameraIndex);
 };
